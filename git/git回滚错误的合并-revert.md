@@ -1,3 +1,4 @@
+[TOC]
 # revert 撤销
 git revert 被用来撤销一个已经提交的快照
 生成一个撤消了 引入的修改的新提交，然后应用到当前分支。而不是从项目历史中移除这个提交。
@@ -44,9 +45,9 @@ W是撤销M点之后的提交（revert of the merge M）
 -m后面带的参数值 可以是1或者2，对应着parent的顺序，
 上面例子：1代表'o，2代表B 所以该操作会保留master分支的修改，而撤销dev分支合并过来的修改。
 
-## 问题延申：
+## 问题延伸：
 因为我们抛弃过之前dev合并过来的commit，下次dev分支bug修复，再往master合并
-### 1. 继续在dev分支上修复bug
+#### 1. revert of the revert
 修改bug之后，未合并之前（C和D为bug修复之后的提交）
 ```
 ---o---o---'o---M---x---x---W---x
@@ -79,7 +80,8 @@ git merge dev
                /                        /
        ---A---B-------------------C----D
 ```
-### 2.从master分支M点之后拉取分支fix bug
+#### 2.有些情况不能 revert of the revert
+如果放弃A和B点的开发，并且在还原之后的W点之后，重新拉取分支来进行开发dev2
 ```
        ---A---B
                \
@@ -87,21 +89,55 @@ git merge dev
                                 \
                                  A'--B'--C'
 ```
-此时在合并时进行"revert of revert"，就会引入
-现象重现
-1. revert of the merge
-
+此时在合并时进行"revert of revert"，之后在合并结果如下：
 ```
- ---o---o---o---M---x---x---W
-               /
        ---A---B
+               \
+ ---o---o---o---M---x---x---W---x---x---Y---Z
+                                 \         /
+                                  A'--B'--C'
 ```
-A和B是dev分支上有问题的提交，
-M是master分支，合并之后包含了有问题的合并，
-x是其他与有问题代码不相关的提交，
-W是撤销M点之后的提交（revert of the merge M）
-该操作对应的git命令为：
+得到的结果为：在开发阶段dev2分支是在没有包含A、B点的情况下进行的开发，在合并阶段，又还原回来了A、B点进行合并，
+会造成重复的改变，从而引发冲突。
 ```
-$ git revert -m 1 M
+不能盲目的、不加思考的
+进行 "revert of revert"
 ```
+#### 3.不用"revert of the revert"能不能合并
+```
+ P---o---o---M---x---x---W---x
+  \         /
+   A---B---C----------------D---E   <-- fixed-up topic branch
+```
+执行命令
+```
+$ git checkout E
+$ git rebase --no-ff P
+```
+结果
+```
+ P---o---o---M---x---x---W---x
+  \         /
+   A'---B'---C'----------------D'---E' <-- recreated topic branch
+```
+之后我们就可以在不revert W点的情况下，合并重建之后的dev分支到master分支
+```
+ P---o---o---M---x---x---W---x---Z
+  \                              /
+   A'---B'---C'------------D'---E'
+```
+The natural thing to do in this case is to checkout the A-B-C branch and use
+"rebase -i P" to change commit B.  However this does not rewrite commit A,
+because "rebase -i" by default fast-forwards over any initial commits selected
+with the "pick" command.
 
+The --no-ff option creates a new branch A'-B'-C' with all-new commits (all the
+SHA IDs will be different) even if in the interactive case you only actually
+modify commit B.  You can then merge this new branch directly into the mainline
+branch and be sure you'll get all of the branch's changes.
+
+You can also use --no-ff in cases where you just add extra commits to the topic
+to fix it up.
+
+**参考资料：**
+- [revert-a-faulty-merge](https://github.com/git/git/blob/master/Documentation/howto/revert-a-faulty-merge.txt)
